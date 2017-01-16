@@ -14,8 +14,6 @@ import (
 	"github.com/urfave/cli"
 )
 
-const metadataURL = "http://rancher-metadata/2015-12-19"
-
 var VERSION = "v0.1.0-dev"
 
 func main() {
@@ -24,13 +22,25 @@ func main() {
 	app.Version = VERSION
 	app.Usage = "An external resource based scheduler for Rancher."
 	app.Action = run
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "metadata-address",
+			Usage: "The metadata service address",
+			Value: "rancher-metadata",
+		},
+		cli.StringFlag{
+			Name:  "listen",
+			Usage: "Listen on this port for healthchecks",
+			Value: ":80",
+		},
+	}
 
 	app.Run(os.Args)
 }
 
 func run(c *cli.Context) error {
 	scheduler := scheduler.NewScheduler()
-	mdClient := metadata.NewClient(metadataURL)
+	mdClient := metadata.NewClient(fmt.Sprintf("http://%s/2015-12-19", c.String("metadata-address")))
 
 	url := os.Getenv("CATTLE_URL")
 	ak := os.Getenv("CATTLE_ACCESS_KEY")
@@ -51,7 +61,7 @@ func run(c *cli.Context) error {
 	}(exit)
 
 	go func(exit chan<- error) {
-		err := startHealthCheck()
+		err := startHealthCheck(c.String("listen"))
 		exit <- errors.Wrapf(err, "Healthcheck provider died.")
 	}(exit)
 
@@ -60,11 +70,11 @@ func run(c *cli.Context) error {
 	return err
 }
 
-func startHealthCheck() error {
+func startHealthCheck(port string) error {
 	http.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "ok")
 	})
-	logrus.Infof("Listening for health checks on 0.0.0.0:80/healthcheck")
-	err := http.ListenAndServe(":80", nil)
+	logrus.Infof("Listening for health checks on 0.0.0.0%s/healthcheck", port)
+	err := http.ListenAndServe(port, nil)
 	return err
 }
